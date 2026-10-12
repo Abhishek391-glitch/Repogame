@@ -1,5 +1,7 @@
 # ⚔️ RepoQuest — AI-Powered Open-Source Exploration Game
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > **"Explore code. Complete quests. Become a contributor."**
 
 RepoQuest helps developers and first-time contributors explore and understand unfamiliar open-source repositories **without cloning or downloading entire codebases**, powered by local, open-weight AI inference (**Qwen 2.5 7B Instruct** via Ollama).
@@ -129,3 +131,9 @@ cd c:\repogame\backend
 - **No Code Execution**: RepoQuest inspects repository metadata and file trees via the GitHub REST API; it never runs or builds untrusted code.
 - **Prompt Injection Defense**: Repository content is strictly treated as untrusted data within bounded system prompts.
 - **Bounded Resource Limits**: Tree exploration and model context lengths are capped to fit comfortably on 6 GB VRAM GPUs and 16 GB system RAM.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information.
