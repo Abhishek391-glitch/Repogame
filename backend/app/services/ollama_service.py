@@ -174,7 +174,8 @@ class OllamaService:
             "messages": messages,
             "stream": False,
             "options": {
-                "temperature": 0.2,  # Low temperature for factual grounding
+                "temperature": 0.3,  # Balanced temperature for factual grounded answers
+                "repeat_penalty": 1.15,  # Prevents repetitive token looping in multilingual outputs
                 "num_predict": 750,  # Bound output length to protect VRAM/RAM
             }
         }
@@ -417,16 +418,85 @@ Return a valid JSON object with EXACTLY this structure:
             citations=[path]
         )
 
+    def _detect_language(self, text: str, preferred: Optional[str] = "auto") -> str:
+        """Helper to detect language code: en, hi, te, ta, etc."""
+        if preferred and preferred != "auto":
+            return preferred.lower()
+        
+        # Check Unicode scripts
+        if re.search(r"[\u0900-\u097F]", text):
+            return "hi"
+        if re.search(r"[\u0C00-\u0C7F]", text):
+            return "te"
+        if re.search(r"[\u0B80-\u0BFF]", text):
+            return "ta"
+        if re.search(r"[\u0C80-\u0CFF]", text):
+            return "kn"
+        if re.search(r"[\u0980-\u09FF]", text):
+            return "bn"
+
+        # Check common Hinglish / Hindi in Latin script
+        hinglish_words = {"kya", "kaise", "kahan", "karo", "karna", "hai", "hain", "batao", "bataiye", "mein", "mujhe", "samjhao", "hota", "hoti", "chahiye"}
+        words = set(re.findall(r"[a-zA-Z]+", text.lower()))
+        if len(words.intersection(hinglish_words)) >= 2 or any(w in {"batao", "samjhao", "kaise"} for w in words):
+            return "hi"
+
+        return "en"
+
+    def _get_multilingual_instruction(self, lang: str) -> str:
+        instructions = {
+            "hi": "You MUST respond in natural, fluent Hindi (हिन्दी). Explain technical flows clearly in Hindi. CRITICAL: Keep all programming identifiers, function names, file paths (e.g. `requests/models.py`), method names (e.g. `send()`), commands, imports, and code blocks in standard English code format. Do NOT transliterate code into Devanagari.",
+            "te": "You MUST respond in natural, fluent Telugu (తెలుగు). Explain technical flows clearly in Telugu. CRITICAL: Keep all programming identifiers, function names, file paths, method names, commands, imports, and code blocks in standard English code format. Do NOT transliterate code into Telugu script.",
+            "ta": "You MUST respond in natural, fluent Tamil (தமிழ்). Explain technical flows clearly in Tamil. CRITICAL: Keep all programming identifiers, function names, file paths, method names, commands, imports, and code blocks in standard English code format. Do NOT transliterate code into Tamil script.",
+            "kn": "You MUST respond in natural, fluent Kannada (ಕನ್ನಡ). Keep all code, filenames, and function names in standard English code format.",
+            "bn": "You MUST respond in natural, fluent Bengali (বাংলা). Keep all code, filenames, and function names in standard English code format.",
+            "es": "You MUST respond in natural, fluent Spanish (Español). Keep all code, filenames, and function names in standard English code format.",
+            "en": "Respond in clear, beginner-friendly English. Cite file paths and code snippets cleanly."
+        }
+        return instructions.get(lang, "Detect the user's language and respond in that same language. Keep all code, filenames, and programming syntax in standard English code format.")
+
+    def _fallback_ask_question(
+        self,
+        owner: str,
+        repo: str,
+        question: str,
+        cited: List[str],
+        lang: str
+    ) -> AiAskResponse:
+        cited_str = ", ".join(f"`{c}`" for c in cited) if cited else f"the `{owner}/{repo}` codebase"
+        if lang == "hi":
+            msg = f"Ollama स्थानीय AI अभी ऑफ़लाइन है या मॉडल '{self.model}' लोड हो रहा है। प्राप्त फ़ाइल साक्ष्य ({cited_str}) के आधार पर: निष्पादन इन मॉड्यूल्स से होकर गुजरता है। अधिक विस्तृत उत्तर के लिए 'ollama run {self.model}' चलाएँ।"
+        elif lang == "te":
+            msg = f"Ollama స్థానిక AI ప్రస్తుతం ఆఫ్‌లైన్‌లో ఉంది లేదా మోడల్ '{self.model}' లోడ్ అవుతోంది. రిపోజిటరీ సాక్ష్యం ({cited_str}) ఆధారంగా విశ్లేషణ సిద్ధంగా ఉంది. ప్రత్యక్ష సమాధానాల కోసం Ollama ను ప్రారంభించండి ('ollama run {self.model}')."
+        elif lang == "ta":
+            msg = f"Ollama உள்ளூர் AI தற்போது ஆஃப்லைனில் உள்ளது அல்லது மாதிரி '{self.model}' ஏற்றப்படுகிறது. பெறப்பட்ட கோப்பு சான்றுகளின் அடிப்படையில் ({cited_str}): முழுமையான பதில்களைப் பெற Ollama-ஐ இயக்கவும் ('ollama run {self.model}')."
+        else:
+            msg = f"Ollama local AI is currently offline or downloading model '{self.model}'. Based on retrieved evidence in {cited_str}: Execution flows through these modules. Start Ollama with 'ollama run {self.model}' for interactive dynamic answers."
+        
+        return AiAskResponse(
+            answer=msg,
+            cited_files=cited,
+            confidence="medium",
+            missing_evidence="Ollama model offline; showing heuristic evidence search.",
+            detected_language=lang
+        )
+
     async def ask_question(
         self,
         owner: str,
         repo: str,
         question: str,
-        evidence_files: List[Dict[str, str]]
+        evidence_files: List[Dict[str, str]],
+        language: Optional[str] = "auto",
+        history: Optional[List[Dict[str, str]]] = None,
+        repo_context: Optional[Dict[str, Any]] = None
     ) -> AiAskResponse:
-        """Answer a newcomer question grounded strictly in provided file evidence."""
+        """Answer a newcomer question grounded strictly in provided file evidence with multilingual support."""
         status = await self.check_status()
         
+        detected_lang = self._detect_language(question, language)
+        lang_instruction = self._get_multilingual_instruction(detected_lang)
+
         # Build evidence context block
         evidence_text = ""
         cited = []
@@ -437,27 +507,39 @@ Return a valid JSON object with EXACTLY this structure:
             cited.append(p)
 
         if not status.available or not status.model_installed:
-            return AiAskResponse(
-                answer=f"Ollama local AI is currently offline or downloading model '{self.model}'. Based on retrieved evidence in {', '.join(f'`{c}`' for c in cited) if cited else 'the repository'}: Execution flows through these modules. Start Ollama with 'ollama run {self.model}' for interactive dynamic answers.",
-                cited_files=cited,
-                confidence="medium",
-                missing_evidence="Ollama model offline; showing heuristic evidence search."
-            )
+            return self._fallback_ask_question(owner, repo, question, cited, detected_lang)
 
-        prompt = f"""Answer this newcomer question about repository {owner}/{repo}:
-Question: \"{question}\"
+        system_content = f"{SYSTEM_PROMPT}\n\n{lang_instruction}"
 
+        # Context summary from repo if provided
+        context_str = ""
+        if repo_context:
+            desc = repo_context.get("description", "")
+            stack = ", ".join(repo_context.get("tech_stack", []))
+            entries = ", ".join(repo_context.get("entry_points", []))
+            context_str = f"Repository: {owner}/{repo}\nDescription: {desc}\nTech Stack: {stack}\nEntry Points: {entries}\n"
+
+        prompt = f"""{context_str}
 Available Repository Evidence:
 {evidence_text or 'No specific file content provided. Use general repository metadata.'}
 
-Provide a direct, helpful, beginner-friendly answer.
+User Question: \"{question}\"
+
+Provide a direct, helpful, beginner-friendly answer adhering strictly to the language and technical formatting rules.
 Cite the relevant file paths in backticks (e.g. `path/to/file`).
 If the evidence does not contain enough information to answer definitively, state what additional files should be inspected.
 """
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ]
+        messages = [{"role": "system", "content": system_content}]
+
+        # Inject conversation history if provided (up to last 6 messages)
+        if history:
+            for item in history[-6:]:
+                role = "assistant" if item.get("role") in ("ai", "assistant") else "user"
+                content = item.get("content", "").strip()
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        messages.append({"role": "user", "content": prompt})
 
         try:
             answer = await self._chat_completion(messages, json_format=False)
@@ -465,7 +547,8 @@ If the evidence does not contain enough information to answer definitively, stat
                 answer=answer.strip(),
                 cited_files=cited,
                 confidence="high",
-                missing_evidence=None
+                missing_evidence=None,
+                detected_language=detected_lang
             )
         except Exception as e:
             logger.warning("Ollama ask_question failed: %s", e)
@@ -473,7 +556,8 @@ If the evidence does not contain enough information to answer definitively, stat
                 answer=f"Could not complete model inference ({str(e)}). Please verify Ollama is responding on {self.base_url}.",
                 cited_files=cited,
                 confidence="low",
-                missing_evidence="Ollama timeout or request error."
+                missing_evidence="Ollama timeout or request error.",
+                detected_language=detected_lang
             )
 
 ollama_service = OllamaService()

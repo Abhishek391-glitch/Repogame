@@ -8,7 +8,9 @@ import {
   Quest,
   QuestValidateResponse,
   ContributorReadinessReport,
-  UserProgress
+  UserProgress,
+  RepoGameSpec,
+  GameDiscoveryResponse
 } from "../types";
 
 const API_BASE = "http://localhost:8000/api";
@@ -103,7 +105,9 @@ class ApiService {
     owner: string;
     repo: string;
     question: string;
+    language?: string;
     relevant_files?: string[];
+    history?: Array<{ role: "user" | "assistant" | "ai"; content: string }>;
   }): Promise<AiAskResponse> {
     return this.request("/ai/ask", {
       method: "POST",
@@ -137,6 +141,45 @@ class ApiService {
     return this.request("/progress/reset", {
       method: "POST",
     });
+  }
+
+  async getGameSpec(owner: string, repo: string): Promise<RepoGameSpec> {
+    return this.request("/game/spec", {
+      method: "POST",
+      body: JSON.stringify({ owner, repo }),
+    });
+  }
+
+  async recordGameDiscovery(params: {
+    repo_full_name: string;
+    object_id: string;
+    object_name: string;
+    path: string;
+    category: string;
+    xp_reward?: number;
+  }): Promise<GameDiscoveryResponse> {
+    return this.request("/game/discover", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  }
+
+  async saveGameProgress(params: {
+    repo_full_name: string;
+    discovered_objects: string[];
+    discovered_areas: string[];
+    current_objective_index: number;
+    portal_unlocked: boolean;
+    portal_completed: boolean;
+  }): Promise<{ status: string; data: unknown }> {
+    return this.request("/game/save-progress", {
+      method: "POST",
+      body: JSON.stringify(params),
+    });
+  }
+
+  async getGameProgress(owner: string, repo: string): Promise<{ exploration: unknown; user_progress: UserProgress }> {
+    return this.request(`/game/progress/${owner}/${repo}`);
   }
 }
 
