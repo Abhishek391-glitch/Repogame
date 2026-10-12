@@ -81,11 +81,21 @@ export interface AiExplainFile {
   citations: string[];
 }
 
+export interface AiAskRequest {
+  owner: string;
+  repo: string;
+  question: string;
+  language?: string;
+  relevant_files?: string[];
+  history?: Array<{ role: "user" | "assistant" | "ai"; content: string }>;
+}
+
 export interface AiAskResponse {
   answer: string;
   cited_files: string[];
   confidence: "high" | "medium" | "low";
   missing_evidence?: string | null;
+  detected_language?: string;
 }
 
 export interface QuestStep {
@@ -154,4 +164,72 @@ export interface UserProgress {
   completed_quest_ids: string[];
   badges: string[];
   repos_explored: string[];
+}
+
+export interface GameCoordinates {
+  x: number;
+  y: number;
+}
+
+export interface GameInteractiveObject {
+  id: string;
+  name: string;
+  entity_type: string;
+  feature_name: string;
+  verified_file_path: string;
+  explanation: string;
+  why_it_matters: string;
+  xp_reward: number;
+  action_prompt: string;
+  icon: string;
+  activity_id: string;
+  coordinates: GameCoordinates;
+  completed: boolean;
+}
+
+export interface GameActivity {
+  id: string;
+  step_number: number;
+  title: string;
+  instruction: string;
+  target_object_id: string;
+  action_label: string;
+  simulation_feedback: string;
+  xp_reward: number;
+  completed: boolean;
+}
+
+export interface GameTheme {
+  category: "food_delivery" | "ecommerce" | "music" | "developer_tool" | "general_explorer";
+  title: string;
+  tagline: string;
+  accent_color: string;
+  bg_gradient: string;
+  badge_label: string;
+  icon: string;
+}
+
+export interface RepoGameSpec {
+  repo_full_name: string;
+  category: "food_delivery" | "ecommerce" | "music" | "developer_tool" | "general_explorer";
+  title: string;
+  tagline: string;
+  description: string;
+  theme: GameTheme;
+  activities: GameActivity[];
+  interactive_objects: GameInteractiveObject[];
+  completion_summary: {
+    title: string;
+    summary: string;
+    next_steps: string[];
+  };
+}
+
+export interface GameDiscoveryResponse {
+  already_discovered: boolean;
+  xp_awarded: number;
+  total_xp: number;
+  level: number;
+  level_name: string;
+  new_badges: string[];
 }

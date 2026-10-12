@@ -51,24 +51,69 @@ async def ask_repository_ai(request: AiAskRequest):
     """
     Contextual Q&A about the repository.
     Fetches real file evidence for relevant files before asking the model.
+    Supports multilingual answers (English, Hindi, Telugu, Tamil, etc.) and conversational history.
     """
+    from app.api.routes_repository import _analysis_cache
+
+    cache_key = f"{request.owner.lower()}/{request.repo.lower()}"
+    analysis = _analysis_cache.get(cache_key)
+
+    repo_context = None
+    all_tree_files: List[str] = []
+    if analysis:
+        repo_context = {
+            "description": analysis.description or "",
+            "tech_stack": analysis.tech_stack,
+            "entry_points": analysis.entry_points,
+            "key_directories": analysis.key_directories,
+        }
+        all_tree_files = [n.path for n in analysis.tree if getattr(n, "type", "") == "file"]
+
+    # Identify candidate relevant files
+    candidate_paths: List[str] = list(request.relevant_files or [])
+
+    if len(candidate_paths) < 3 and all_tree_files:
+        # Extract keywords from question to match files
+        import re
+        q_clean = request.question.lower()
+        # Look for English words and technical terms
+        keywords = [w for w in re.findall(r"[a-z0-9_]{3,}", q_clean) if w not in {"what", "where", "how", "when", "which", "this", "that", "with", "does", "from", "have", "been", "file", "code", "repo", "application", "project"}]
+        
+        matched_files = []
+        for kw in keywords:
+            for f in all_tree_files:
+                if kw in f.lower() and f not in candidate_paths and f not in matched_files:
+                    matched_files.append(f)
+                    if len(matched_files) >= 3:
+                        break
+            if len(matched_files) >= 3:
+                break
+        
+        candidate_paths.extend(matched_files)
+
+    # If still empty, fall back to entry points / config
+    if not candidate_paths and analysis:
+        candidate_paths = (analysis.entry_points[:2] + analysis.config_files[:1])
+
     evidence_files: List[Dict[str, str]] = []
-    
-    # If client passed candidate files, retrieve small snippets for context
-    if request.relevant_files:
-        for fpath in request.relevant_files[:3]:
-            try:
-                fdata = await github_service.get_file_content(request.owner, request.repo, fpath)
+    for fpath in candidate_paths[:4]:
+        try:
+            fdata = await github_service.get_file_content(request.owner, request.repo, fpath)
+            content = fdata.get("content", "")
+            if content and not fdata.get("is_binary", False):
                 evidence_files.append({
                     "path": fpath,
-                    "content": fdata.get("content", "")[:1200]
+                    "content": content[:1200]
                 })
-            except Exception as e:
-                logger.warning("Could not fetch evidence file %s: %s", fpath, e)
+        except Exception as e:
+            logger.warning("Could not fetch evidence file %s: %s", fpath, e)
 
     return await ollama_service.ask_question(
         owner=request.owner,
         repo=request.repo,
         question=request.question,
-        evidence_files=evidence_files
+        evidence_files=evidence_files,
+        language=request.language or "auto",
+        history=request.history,
+        repo_context=repo_context
     )

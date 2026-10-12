@@ -145,3 +145,35 @@ def test_fallback_project_overview():
     assert "requests" in fallback.summary
     assert len(fallback.learning_recommendations) > 0
     assert len(fallback.grounded_facts) > 0
+
+# 6. Multilingual Language Detection & Grounded Fallbacks
+def test_multilingual_language_detection():
+    # Devanagari Hindi
+    assert ollama_service._detect_language("इस प्रोजेक्ट में ऑथेंटिकेशन कैसे काम करता है?", "auto") == "hi"
+    # Hinglish Hindi
+    assert ollama_service._detect_language("Mujhe batao ki application mein authentication kaise kaam karta hai", "auto") == "hi"
+    # Telugu script
+    assert ollama_service._detect_language("ఈ ప్రాజెక్ట్‌లో అథెంటికేషన్ ఎలా పనిచేస్తుంది?", "auto") == "te"
+    # Tamil script
+    assert ollama_service._detect_language("இந்த திட்டத்தில் அங்கீகாரம் எவ்வாறு செயல்படுகிறது?", "auto") == "ta"
+    # English default
+    assert ollama_service._detect_language("Where does program execution begin?", "auto") == "en"
+    # Explicit selector overrides
+    assert ollama_service._detect_language("Where does it begin?", "hi") == "hi"
+    assert ollama_service._detect_language("Where does it begin?", "te") == "te"
+    assert ollama_service._detect_language("Where does it begin?", "ta") == "ta"
+
+def test_multilingual_offline_fallback():
+    hi_res = ollama_service._fallback_ask_question("psf", "requests", "ऑथ कैसे काम करता है?", ["requests/auth.py"], "hi")
+    assert hi_res.detected_language == "hi"
+    assert "ऑफ़लाइन" in hi_res.answer or "Ollama" in hi_res.answer
+    assert "requests/auth.py" in hi_res.cited_files
+
+    te_res = ollama_service._fallback_ask_question("psf", "requests", "ఎలా పనిచేస్తుంది?", ["requests/auth.py"], "te")
+    assert te_res.detected_language == "te"
+    assert "ఆఫ్‌లైన్‌" in te_res.answer or "Ollama" in te_res.answer
+
+    ta_res = ollama_service._fallback_ask_question("psf", "requests", "எவ்வாறு செயல்படுகிறது?", ["requests/auth.py"], "ta")
+    assert ta_res.detected_language == "ta"
+    assert "ஆஃப்லைனில்" in ta_res.answer or "Ollama" in ta_res.answer
+

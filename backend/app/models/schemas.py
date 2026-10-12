@@ -109,13 +109,16 @@ class AiAskRequest(BaseModel):
     owner: str
     repo: str
     question: str
+    language: Optional[str] = "auto"
     relevant_files: Optional[List[str]] = None
+    history: Optional[List[Dict[str, str]]] = None
 
 class AiAskResponse(BaseModel):
     answer: str
     cited_files: List[str] = []
     confidence: str = "high"
     missing_evidence: Optional[str] = None
+    detected_language: Optional[str] = "en"
 
 # Quests
 class QuestStep(BaseModel):
@@ -189,3 +192,54 @@ class UserProgress(BaseModel):
     completed_quest_ids: List[str] = []
     badges: List[str] = []
     repos_explored: List[str] = []
+
+# Repository-Aware Game Specification
+class GameCoordinates(BaseModel):
+    x: float
+    y: float
+
+class GameInteractiveObject(BaseModel):
+    id: str
+    name: str
+    entity_type: str
+    feature_name: str
+    verified_file_path: str
+    explanation: str
+    why_it_matters: str
+    xp_reward: int = 50
+    action_prompt: str
+    icon: str
+    activity_id: str
+    coordinates: GameCoordinates
+    completed: bool = False
+
+class GameActivity(BaseModel):
+    id: str
+    step_number: int
+    title: str
+    instruction: str
+    target_object_id: str
+    action_label: str
+    simulation_feedback: str
+    xp_reward: int = 50
+    completed: bool = False
+
+class GameTheme(BaseModel):
+    category: str  # "food_delivery", "ecommerce", "music", "developer_tool", "general_explorer"
+    title: str
+    tagline: str
+    accent_color: str
+    bg_gradient: str
+    badge_label: str
+    icon: str
+
+class RepoGameSpec(BaseModel):
+    repo_full_name: str
+    category: str
+    title: str
+    tagline: str
+    description: str
+    theme: GameTheme
+    activities: List[GameActivity]
+    interactive_objects: List[GameInteractiveObject]
+    completion_summary: Dict[str, Any]

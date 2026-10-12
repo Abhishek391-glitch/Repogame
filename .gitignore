@@ -1,0 +1,33 @@
+# Environment & Secrets
+.env
+*.env
+backend/.env
+
+# Local Databases
+*.db
+*.sqlite3
+repoquest.db
+backend/repoquest.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.pytest_cache/
+
+# Frontend / Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+.vite
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

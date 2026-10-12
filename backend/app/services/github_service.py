@@ -97,8 +97,9 @@ class GitHubService:
             "Accept": "application/vnd.github.v3+json",
             "User-Agent": "RepoQuest-AI-Explorer/1.0"
         }
-        if settings.GITHUB_TOKEN and settings.GITHUB_TOKEN.strip():
-            headers["Authorization"] = f"Bearer {settings.GITHUB_TOKEN.strip()}"
+        token = settings.GITHUB_TOKEN.strip().strip("\"'")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def _track_rate_limits(self, response: httpx.Response):
